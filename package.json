@@ -1,0 +1,31 @@
+{
+	"name": "pi-ssh",
+	"version": "0.1.0",
+	"description": "Work on a remote machine from pi: --ssh user@host sends read/write/edit/bash/ls/grep/find over SSH and maps the local working directory onto a remote one.",
+	"type": "module",
+	"license": "MIT",
+	"keywords": [
+		"pi",
+		"pi-package",
+		"ssh",
+		"remote",
+		"tools"
+	],
+	"pi": {
+		"extensions": [
+			"./index.ts"
+		]
+	},
+	"scripts": {
+		"typecheck": "tsc --noEmit",
+		"test": "bun test",
+		"test:remote": "PI_SSH_TEST_HOST=${PI_SSH_TEST_HOST:-localhost} bun test test/remote.test.ts"
+	},
+	"devDependencies": {
+		"@earendil-works/pi-coding-agent": "^0.99.1",
+		"@types/bun": "^1.4.2",
+		"@types/node": "^26.6.3",
+		"typebox": "^1.3.34",
+		"typescript": "^7.0.2"
+	}
+}
