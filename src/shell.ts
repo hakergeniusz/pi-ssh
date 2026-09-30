@@ -21,6 +21,20 @@ export function shellJoin(values: readonly string[]): string {
 }
 
 /**
+ * Build a remote `cd` command. A tilde only expands when it is unquoted, so the
+ * `~` / `~user` prefix stays bare and only the remainder is quoted; everything
+ * else is quoted whole. Without this, `cd '~'` fails with "no such file or
+ * directory: ~" on the remote host.
+ */
+export function cdCommand(dir: string): string {
+	const match = /^(~[A-Za-z0-9._-]*)(\/(.*))?$/.exec(dir);
+	if (!match) return `cd ${shellQuote(dir)}`;
+	const prefix = match[1]!;
+	const rest = match[3];
+	return rest ? `cd ${prefix}/${shellQuote(rest)}` : `cd ${prefix}`;
+}
+
+/**
  * Split a user-supplied option string into argv entries.
  *
  * Understands single and double quotes and backslash escapes, which is enough

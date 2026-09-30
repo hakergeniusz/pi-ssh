@@ -60,6 +60,21 @@ describe.skipIf(!host)("real ssh session", () => {
 		expect(session.describe()).toContain(host!);
 	});
 
+	test("defaults to the remote home directory when no dir is given", async () => {
+		// Regression guard for `cd '~'`: the default dir must resolve to $HOME,
+		// and closing this extra session must not tear down the main session's
+		// control socket (each session owns a private control directory).
+		const homeSession = await SshSession.open({ host: host! });
+		try {
+			const remoteHome = (await homeSession.capture("echo $HOME")).trim();
+			expect(remoteHome.startsWith("/")).toBe(true);
+			expect(homeSession.cwd).toBe(remoteHome);
+		} finally {
+			homeSession.close();
+		}
+		expect((await session.capture("echo still-alive")).trim()).toBe("still-alive");
+	}, 30_000);
+
 	test("streams command output and exit codes", async () => {
 		const ops = createRemoteBashOps(context());
 		let out = "";

@@ -6,7 +6,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { createPathMapper } from "../src/path-map.ts";
-import { shellJoin, shellQuote, splitOptionString } from "../src/shell.ts";
+import { cdCommand, shellJoin, shellQuote, splitOptionString } from "../src/shell.ts";
 import { mapGrepOutput, findPredicate, matchesGlob } from "../src/remote-search.ts";
 import { parseSshTarget, TargetParseError } from "../src/target.ts";
 
@@ -59,6 +59,30 @@ describe("shell quoting", () => {
 		expect(splitOptionString("-p 2222 -i ~/.ssh/id_ed25519")).toEqual(["-p", "2222", "-i", "~/.ssh/id_ed25519"]);
 		expect(splitOptionString('-o "ProxyCommand nc %h %p"')).toEqual(["-o", "ProxyCommand nc %h %p"]);
 		expect(splitOptionString("")).toEqual([]);
+	});
+});
+
+describe("cd command", () => {
+	test("keeps tilde prefixes bare so they expand remotely", () => {
+		expect(cdCommand("~")).toBe("cd ~");
+		expect(cdCommand("~/")).toBe("cd ~");
+		expect(cdCommand("~/code")).toBe("cd ~/code");
+		expect(cdCommand("~root")).toBe("cd ~root");
+	});
+
+	test("quotes only the part after the tilde prefix", () => {
+		expect(cdCommand("~/my app")).toBe(`cd ~/'my app'`);
+		expect(cdCommand("~root/dir with spaces")).toBe(`cd ~root/'dir with spaces'`);
+	});
+
+	test("quotes absolute and relative paths as before", () => {
+		expect(cdCommand("/srv/app")).toBe("cd /srv/app");
+		expect(cdCommand("/srv/my app")).toBe(`cd '/srv/my app'`);
+	});
+
+	test("never lets an unexpanded tilde-like value through unquoted", () => {
+		expect(cdCommand("~; rm -rf /")).toBe(`cd '~; rm -rf /'`);
+		expect(cdCommand("$HOME")).toBe(`cd '$HOME'`);
 	});
 });
 

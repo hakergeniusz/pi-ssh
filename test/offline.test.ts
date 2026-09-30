@@ -11,7 +11,7 @@
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { tmpdir, homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
@@ -89,6 +89,17 @@ describe("session", () => {
 		await expect(SshSession.open({ host: "nonexistent.invalid", dir: sandbox })).rejects.toThrow(
 			/Cannot connect to nonexistent.invalid/,
 		);
+	});
+
+	test("defaults to the home directory when no dir is given", async () => {
+		// Regression: `cd '~'` used to fail on the remote shell because a quoted
+		// tilde never expands. The default must land in $HOME.
+		const home = await SshSession.open({ host: "localhost" });
+		try {
+			expect(home.cwd).toBe(homedir());
+		} finally {
+			home.close();
+		}
 	});
 
 	test("wraps commands in an explicit cd", async () => {

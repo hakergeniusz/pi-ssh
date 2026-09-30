@@ -10,11 +10,11 @@
  */
 
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { chmodSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { shellQuote, splitOptionString } from "./shell.ts";
+import { cdCommand, splitOptionString } from "./shell.ts";
 
 /** Seconds ssh waits for the TCP/handshake phase before giving up. */
 const CONNECT_TIMEOUT_SECONDS = 15;
@@ -104,7 +104,7 @@ export class SshSession {
 		const probe = new SshSession(options, options.dir ?? "~", "", EMPTY_CAPABILITIES, controlDir, extraOptions);
 
 		const script = [
-			`cd ${shellQuote(options.dir ?? "~")} || exit 70`,
+			`${cdCommand(options.dir ?? "~")} || exit 70`,
 			"pwd -P",
 			"uname -sr 2>/dev/null || echo unknown",
 			'for tool in rg fd file; do command -v "$tool" >/dev/null 2>&1 && echo "pi-ssh-tool:$tool"; done',
@@ -241,7 +241,7 @@ export class SshSession {
 			// below before anyone sees it): sshd runs each session in its own process group,
 			// so an aborted command can be killed remotely with `kill -- -pid`. The closing
 			// brace sits on its own line so commands ending in `&` stay valid.
-			const remoteCommand = `cd ${shellQuote(cwd)} && { echo $$; ${command}\n}`;
+			const remoteCommand = `${cdCommand(cwd)} && { echo $$; ${command}\n}`;
 			const child: ChildProcessWithoutNullStreams = spawn("ssh", this.sshArgs(remoteCommand), {
 				stdio: ["pipe", "pipe", "pipe"],
 			});
@@ -377,7 +377,7 @@ export class SshSession {
 		});
 	}
 
-	/** Best-effort teardown: drop the shared control socket and remove its directory. */
+	/** Best-effort teardown: drop this session's control socket and remove its directory. */
 	close(): void {
 		if (!this.controlDir) return;
 		try {
@@ -405,7 +405,13 @@ function describeTransportFailure(stderr: string, exitCode: number | null): stri
 
 function createControlDir(host: string): string {
 	const digest = createHash("sha256").update(host).digest("hex").slice(0, 12);
-	const dir = join(tmpdir(), `pi-ssh-${process.getuid?.() ?? 0}-${digest}`);
+	// Unique per session: concurrent sessions to the same host (including other
+	// pi processes) each get their own master connection, so `close()` on one
+	// session can never rip the control socket out from under another.
+	const dir = join(
+		tmpdir(),
+		`pi-ssh-${process.getuid?.() ?? 0}-${digest}-${process.pid}-${randomBytes(4).toString("hex")}`,
+	);
 	mkdirSync(dir, { recursive: true, mode: 0o700 });
 	try {
 		chmodSync(dir, 0o700);
