@@ -15,6 +15,11 @@ the model keeps using the paths it already knows: opening `src/index.ts` reads
 same local path space. Without the flag everything behaves exactly like stock pi, and
 `/ssh on user@host` can connect mid-session.
 
+The `ls`, `grep` and `find` tools are **declared only while a session is connected** —
+locally the bash tool covers them, so an idle pi-ssh adds no tool-schema tokens to your
+context. Connecting (flag or `/ssh on`) activates them; `/ssh off` or disconnect hides
+them again.
+
 ## Install
 
 ```bash

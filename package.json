@@ -1,6 +1,6 @@
 {
 	"name": "pi-ssh",
-	"version": "0.1.0",
+	"version": "0.2.0",
 	"description": "Work on a remote machine from pi: --ssh user@host sends read/write/edit/bash/ls/grep/find over SSH and maps the local working directory onto a remote one.",
 	"type": "module",
 	"license": "MIT",

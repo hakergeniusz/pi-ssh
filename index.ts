@@ -8,7 +8,8 @@
  * all execute on the remote host, and the local working directory is mapped
  * onto the remote one so the model keeps using familiar local paths. Without
  * the flag every tool behaves exactly like stock pi, and `/ssh on` can connect
- * mid-session.
+ * mid-session. The `ls`/`grep`/`find` tools are declared to the model only
+ * while a session is connected, so idle sessions cost no extra tokens.
  *
  * Inspired by the upstream `examples/extensions/ssh.ts`, extended with remote
  * search tools, connection multiplexing, POSIX-correct quoting and a `/ssh`
@@ -129,9 +130,30 @@ export default function piSsh(pi: ExtensionAPI) {
 		} as AnyTool;
 	}
 
-	for (const name of Object.keys(localTools) as (keyof typeof localTools)[]) {
+	// read/write/edit/bash replace the built-ins 1:1: same declarations, with
+	// execute() routed to the remote host when connected and falling back to
+	// local when not. They must stay declared in every session.
+	for (const name of ["read", "write", "edit", "bash"] as const) {
 		pi.registerTool(route(name));
 	}
+
+	/**
+	 * ls/grep/find only exist to run on the remote host (locally the bash tool
+	 * covers them), so they are declared only while an SSH session is active.
+	 * Tools cannot be unregistered; re-registering with `exposure: "hidden"`
+	 * withdraws the declaration, and re-registering plainly activates it again
+	 * (pi records the change as one tool delta before the next request).
+	 */
+	let searchToolsVisible: boolean | null = null;
+	function setSearchTools(visible: boolean): void {
+		if (visible === searchToolsVisible) return;
+		searchToolsVisible = visible;
+		for (const name of ["ls", "grep", "find"] as const) {
+			const tool = route(name);
+			pi.registerTool(visible ? tool : { ...tool, exposure: "hidden" });
+		}
+	}
+	setSearchTools(false);
 
 	function statusText(): string | undefined {
 		if (!state.session || !state.mapper) return undefined;
@@ -163,6 +185,7 @@ export default function piSsh(pi: ExtensionAPI) {
 		if (spec) state.lastSpec = spec;
 		remoteTools = undefined;
 		remoteToolsSession = null;
+		setSearchTools(session !== null);
 	}
 
 	async function connect(spec: string, ctx: ExtensionContext): Promise<boolean> {
