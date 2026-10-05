@@ -32,6 +32,7 @@ import {
 	type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import { createPathMapper, type PathMapper } from "./src/path-map.ts";
+import { renderTailWriteCall, tailPreviewEnabled } from "./src/tail-write.ts";
 import {
 	createRemoteBashOps,
 	createRemoteEditOps,
@@ -120,8 +121,15 @@ export default function piSsh(pi: ExtensionAPI) {
 	/** Delegate to the remote tool when connected, otherwise to stock pi's. */
 	function route(name: keyof typeof localTools): AnyTool {
 		const local = localTools[name] as unknown as AnyTool;
+		// write previews the tail of the file being written: while a long file
+		// streams, the head-first preview shows lines that arrived long ago.
+		const renderCall =
+			name === "write" && tailPreviewEnabled()
+				? (args: any, theme: any, context: any) => renderTailWriteCall(args, theme, context)
+				: local.renderCall;
 		return {
 			...local,
+			renderCall,
 			execute(toolCallId: string, params: any, signal: AbortSignal | undefined, onUpdate: any, ctx: any) {
 				if (!state.session) return local.execute(toolCallId, params, signal, onUpdate, ctx);
 				const tools = remoteToolSet(state.session);

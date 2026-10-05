@@ -20,6 +20,25 @@ locally the bash tool covers them, so an idle pi-ssh adds no tool-schema tokens 
 context. Connecting (flag or `/ssh on`) activates them; `/ssh off` or disconnect hides
 them again.
 
+## Tail write preview
+
+The `write` preview shows the **last** 20 lines of the file being written, not the
+first 10. While a long file streams, pi's head-first preview shows lines that
+arrived long ago; the tail follows the live edge of the generation.
+`ctrl+o` still expands to the whole file, and syntax highlighting is unchanged.
+
+```sh
+PI_TAIL_PREVIEW_LINES=30   # window size, default 20
+PI_TAIL_PREVIEW=off        # back to pi's head-first preview
+```
+
+It lives in this extension rather than a separate one because pi resolves a
+tool's renderer from the definition registry and resolves name collisions
+first-wins by extension load order: pi-ssh already owns `write`, so a separate
+extension registering `write` loses the slot and never renders. If another
+extension claims `write` and loads earlier — SoL-Pi's action fusion does when it
+is enabled — that one renders instead.
+
 ## Install
 
 ```bash
@@ -27,8 +46,10 @@ ln -s ~/pi-ssh ~/.pi/agent/extensions/pi-ssh
 ```
 
 Requires the `ssh` client and key-based auth (the transport uses `BatchMode=yes`, so
-password prompts never block the agent). The remote login shell should be POSIX
-(bash/zsh/dash).
+password prompts never block the agent). Remote commands run under bash — the same
+shell pi's bash tool uses locally — not under the host's login shell, so a zsh (or
+other) default cannot change the dialect. A host without bash works with
+`PI_SSH_SHELL=/bin/sh`.
 
 ## What the model gets
 
@@ -61,6 +82,7 @@ the environment:
 
 ```bash
 PI_SSH_OPTIONS='-i ~/.ssh/id_ed25519 -J bastion' pi --ssh user@host
+PI_SSH_SHELL=/bin/zsh pi --ssh user@host   # override the remote shell
 ```
 
 ## How it works
@@ -69,7 +91,8 @@ PI_SSH_OPTIONS='-i ~/.ssh/id_ed25519 -J bastion' pi --ssh user@host
   master and every later call into a nearly free slave, so a typical agent turn with
   dozens of small tool calls doesn't pay a TCP + auth handshake each time.
 - **Capability probe at connect.** One round trip resolves the remote cwd, kernel and
-  which of `rg`/`fd`/`file` exist, so search picks the best tool per host.
+  which of `rg`/`fd`/`file` exist, so search picks the best tool per host. It also
+  runs under the configured shell, so a missing one fails with a clear message.
 - **Aborts kill the real work.** Each remote command publishes its shell pid; on
   abort or timeout pi-ssh signals the remote process group (`kill -- -pid`), kills the
   local ssh client and destroys its pipes so nothing waits on the multiplexer. A
