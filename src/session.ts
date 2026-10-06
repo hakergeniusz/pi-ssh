@@ -14,7 +14,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { chmodSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { cdCommand, splitOptionString } from "./shell.ts";
+import { cdCommand, resolveRemoteShell, shellCommand, splitOptionString } from "./shell.ts";
 
 /** Seconds ssh waits for the TCP/handshake phase before giving up. */
 const CONNECT_TIMEOUT_SECONDS = 15;
@@ -32,6 +32,8 @@ export interface SshSessionOptions {
 	readonly dir?: string;
 	/** Extra `ssh` arguments, e.g. from `PI_SSH_OPTIONS`. */
 	readonly extraOptions?: readonly string[];
+	/** Shell that runs every remote command. Defaults to `PI_SSH_SHELL`, then bash. */
+	readonly shell?: string;
 	/** Directory holding the control socket. Created on demand. */
 	readonly controlDir?: string;
 }
@@ -79,6 +81,8 @@ export class SshSession {
 	readonly cwd: string;
 	readonly uname: string;
 	readonly capabilities: RemoteCapabilities;
+	/** Shell every remote command runs under (bash unless `PI_SSH_SHELL` says otherwise). */
+	readonly shell: string;
 
 	private readonly extraOptions: readonly string[];
 
@@ -95,6 +99,7 @@ export class SshSession {
 		this.uname = uname;
 		this.capabilities = capabilities;
 		this.extraOptions = extraOptions;
+		this.shell = options.shell ?? resolveRemoteShell();
 	}
 
 	/** Connect, resolve the remote working directory, and probe remote tooling. */
@@ -126,6 +131,15 @@ export class SshSession {
 				probe.close();
 				throw new SshError(
 					`Remote directory not usable on ${options.host}: ${options.dir ?? "~"} (${detail})`,
+					result.stderr,
+					result.exitCode,
+				);
+			}
+			if (result.exitCode === 127) {
+				// 127 is the shell's "command not found": almost always the shell itself.
+				probe.close();
+				throw new SshError(
+					`Remote shell not usable on ${options.host}: ${probe.shell} (${detail}). Set PI_SSH_SHELL to a shell that exists there.`,
 					result.stderr,
 					result.exitCode,
 				);
@@ -241,7 +255,10 @@ export class SshSession {
 			// below before anyone sees it): sshd runs each session in its own process group,
 			// so an aborted command can be killed remotely with `kill -- -pid`. The closing
 			// brace sits on its own line so commands ending in `&` stay valid.
-			const remoteCommand = `${cdCommand(cwd)} && { echo $$; ${command}\n}`;
+			// The whole script then runs under `shell` (bash, pi's default) instead of the
+			// remote login shell, so the dialect never depends on the host's `passwd` entry.
+			const script = `${cdCommand(cwd)} && { echo $$; ${command}\n}`;
+			const remoteCommand = shellCommand(script, this.shell);
 			const child: ChildProcessWithoutNullStreams = spawn("ssh", this.sshArgs(remoteCommand), {
 				stdio: ["pipe", "pipe", "pipe"],
 			});

@@ -3,6 +3,8 @@
  *
  * `ssh host cmd arg` concatenates its arguments with spaces and lets the remote
  * login shell parse them, so every interpolated value has to be quoted here.
+ * That login shell only forwards the command; the real work runs under bash
+ * (see `shellCommand`), which is the same shell pi uses locally.
  * JSON.stringify (as the upstream example does) is not enough: double quotes
  * still expand `$`, backticks and backslashes.
  */
@@ -18,6 +20,31 @@ export function shellQuote(value: string): string {
 /** Quote every argument and join them with spaces. */
 export function shellJoin(values: readonly string[]): string {
 	return values.map(shellQuote).join(" ");
+}
+
+/**
+ * Shell used for remote commands: the same one pi's own bash tool runs locally.
+ * Overridable with `PI_SSH_SHELL` (e.g. `/usr/bin/bash` on NixOS, `sh` for a
+ * host without bash at all).
+ */
+export const DEFAULT_REMOTE_SHELL = "bash";
+
+export function resolveRemoteShell(env: NodeJS.ProcessEnv = process.env): string {
+	const configured = env.PI_SSH_SHELL?.trim();
+	return configured ? configured : DEFAULT_REMOTE_SHELL;
+}
+
+/**
+ * Run `script` under `shell` instead of the remote login shell.
+ *
+ * sshd hands the command to the user's login shell, so a zsh (or any other)
+ * default decides the dialect. `exec` replaces that shell in place, keeping its
+ * pid and process group: the `echo $$` handshake and the abort kill therefore
+ * still address the right process, while the command itself runs in bash, the
+ * same dialect pi uses locally.
+ */
+export function shellCommand(script: string, shell: string = DEFAULT_REMOTE_SHELL): string {
+	return `exec ${shellQuote(shell)} -c ${shellQuote(script)}`;
 }
 
 /**

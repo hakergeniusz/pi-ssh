@@ -6,7 +6,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { createPathMapper } from "../src/path-map.ts";
-import { cdCommand, shellJoin, shellQuote, splitOptionString } from "../src/shell.ts";
+import { cdCommand, resolveRemoteShell, shellCommand, shellJoin, shellQuote, splitOptionString } from "../src/shell.ts";
 import { mapGrepOutput, findPredicate, matchesGlob } from "../src/remote-search.ts";
 import { parseSshTarget, TargetParseError } from "../src/target.ts";
 
@@ -83,6 +83,34 @@ describe("cd command", () => {
 	test("never lets an unexpanded tilde-like value through unquoted", () => {
 		expect(cdCommand("~; rm -rf /")).toBe(`cd '~; rm -rf /'`);
 		expect(cdCommand("$HOME")).toBe(`cd '$HOME'`);
+	});
+});
+
+describe("remote shell wrapper", () => {
+	test("runs the script under bash, pi's default shell", () => {
+		expect(shellCommand("echo hi")).toBe(`exec bash -c 'echo hi'`);
+	});
+
+	test("execs so the shell keeps the session pid and process group", () => {
+		expect(shellCommand("cd /srv && { echo $$; ls\n}").startsWith("exec bash -c ")).toBe(true);
+	});
+
+	test("quotes a custom shell and the script", () => {
+		expect(shellCommand("echo hi", "/opt/my shell")).toBe(`exec '/opt/my shell' -c 'echo hi'`);
+	});
+
+	test("neutralizes single quotes, expansions and newlines in the script", () => {
+		expect(shellCommand("echo 'it'\\''s' $(id)")).toBe(
+			`exec bash -c 'echo '\\''it'\\''\\'\\'''\\''s'\\'' $(id)'`,
+		);
+		expect(shellCommand("ls\nrm -rf /")).toBe(`exec bash -c 'ls
+rm -rf /'`);
+	});
+
+	test("defaults to bash and honours PI_SSH_SHELL", () => {
+		expect(resolveRemoteShell({})).toBe("bash");
+		expect(resolveRemoteShell({ PI_SSH_SHELL: "  " })).toBe("bash");
+		expect(resolveRemoteShell({ PI_SSH_SHELL: "/bin/zsh" })).toBe("/bin/zsh");
 	});
 });
 
